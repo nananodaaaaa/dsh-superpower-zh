@@ -1,0 +1,29 @@
+# dsh-ppt-plugin bundle patch: mounts the three PPT skills into a dsh
+# profile's host composition, as their own layer.
+#
+# Split out of `dsh-superpower-zh` deliberately: these bundles are a different
+# product (image-generation driven slide work with its own scripts, reference
+# images, and Python toolchain), they are heavy on disk, and a deployment may
+# want one without the other. Two independent bundles are also the rule this
+# family follows everywhere else — one package, one concern, one patch layer.
+#
+# Same two-row shape as `dsh-superpower-zh`, and the two coexist because each
+# registers its OWN `skill-filesystem` provider name; a provider name may only
+# be registered once per process, so reusing `superpower-zh` (or the base
+# bundle's `filesystem`) here would collide.
+#
+# `name: ./skills` is a normal relative plugin name, anchored by the profile
+# loader to THIS file's directory.
+
+- insert:
+    - id: skill-filesystem-ppt-plugin
+      name: '@deepseek-ai/dsh-skill-filesystem'
+      config:
+        providerName: ppt-plugin
+        includeDefaultRoots: false
+        customSkillDirs:
+          - ./skills
+        watch: true
+
+    - id: ppt-plugin
+      name: ./index.js

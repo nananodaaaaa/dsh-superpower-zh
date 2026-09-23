@@ -1,0 +1,51 @@
+{
+  "name": "dsh-ppt-plugin",
+  "version": "0.1.0",
+  "description": "PPT Plugin for DeepSeek Harness: 3 个 PPT 技能（图片型 PPT 生成 / 图片逆向还原为可编辑 PPTX / 端到端全流程编排），作为独立 profile 插件与 superpower-zh、AgentTeams 并行共存",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib",
+    "skills",
+    "scripts",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "verify:skills": "node ../dsh-superpower-zh/scripts/verify-skills.mjs .",
+    "rename-refs": "node scripts/rename-refs.mjs ."
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nananodaaaaa/dsh-superpower-zh.git",
+    "directory": "dsh-ppt-plugin"
+  },
+  "homepage": "https://github.com/nananodaaaaa/dsh-superpower-zh#readme",
+  "bugs": {
+    "url": "https://github.com/nananodaaaaa/dsh-superpower-zh/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "ppt",
+    "pptx",
+    "image-to-pptx",
+    "skills"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

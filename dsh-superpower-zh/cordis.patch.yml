@@ -1,0 +1,37 @@
+# dsh-superpower-zh bundle patch: mounts the Superpower-ZH skill family into a
+# dsh profile's host composition, next to every other profile bundle
+# (@nanmicoder/dsh-agent-teams included — the two are independent rows).
+#
+# Two rows, two jobs:
+#   1. `skill-filesystem` — a SECOND filesystem skill provider (its own
+#      `providerName`, so it cannot collide with the base bundle's
+#      `filesystem` provider). It contributes this package's skill bundles to
+#      the shared `skills` registry, which is what `tool-skill` already
+#      renders into each session's catalog. `includeDefaultRoots: false` makes
+#      it isolated: the base provider keeps owning the project, user, and
+#      bundled roots, so nothing is scanned twice.
+#   2. `superpower-zh` — the package's own plugin entry, registering the
+#      always-on policy section into `systemPrompt`.
+#
+# `name: ./skills` is a normal relative plugin name. The profile loader
+# anchors relative inserted names to THIS file's directory, so the row
+# resolves beside the patch wherever the package is installed or linked — no
+# absolute path to keep in sync and no `!!js` needed.
+#
+# Both rows publish nothing, so neither needs an `isolate` realm; a profile
+# bundle is one instance per process, which is exactly the lifetime the shared
+# skill registry and prompt registry want. The skills are inert text until an
+# agent calls the `skill` tool, so they add catalogue lines only, never tools.
+
+- insert:
+    - id: skill-filesystem-superpower-zh
+      name: '@deepseek-ai/dsh-skill-filesystem'
+      config:
+        providerName: superpower-zh
+        includeDefaultRoots: false
+        customSkillDirs:
+          - ./skills
+        watch: true
+
+    - id: superpower-zh
+      name: ./index.js

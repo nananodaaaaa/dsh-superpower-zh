@@ -1,0 +1,51 @@
+{
+  "name": "dsh-superpower-zh",
+  "version": "0.1.0",
+  "description": "Superpower-ZH for DeepSeek Harness: 24 个中文技能（brainstorming / TDD / systematic-debugging / 中文工程规范 / PPT 生成）+ 常驻核心规则，作为 profile 插件与 AgentTeams 并行共存",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib",
+    "skills",
+    "scripts",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "verify:skills": "node scripts/verify-skills.mjs . && node scripts/verify-skills.mjs ../dsh-ppt-plugin",
+    "verify:patches": "node scripts/verify-patches.mjs",
+    "boot-probe": "powershell -NoProfile -File scripts/boot-probe.ps1"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nananodaaaaa/dsh-superpower-zh.git",
+    "directory": "dsh-superpower-zh"
+  },
+  "homepage": "https://github.com/nananodaaaaa/dsh-superpower-zh#readme",
+  "bugs": {
+    "url": "https://github.com/nananodaaaaa/dsh-superpower-zh/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "superpowers",
+    "skills",
+    "agent-teams"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
