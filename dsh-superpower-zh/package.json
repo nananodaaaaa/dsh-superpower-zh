@@ -19,7 +19,9 @@
   ],
   "scripts": {
     "verify:skills": "node scripts/verify-skills.mjs . && node scripts/verify-skills.mjs ../dsh-ppt-plugin",
+    "verify:expressions": "node scripts/verify-expressions.mjs",
     "verify:patches": "node scripts/verify-patches.mjs",
+    "verify": "npm run verify:skills && npm run verify:expressions && npm run verify:patches",
     "boot-probe": "powershell -NoProfile -File scripts/boot-probe.ps1"
   },
   "license": "MIT",

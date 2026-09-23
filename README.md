@@ -74,31 +74,46 @@ dsh plugin --profile web remove dsh-ppt-plugin
 node dsh-superpower-zh/scripts/verify-skills.mjs dsh-superpower-zh
 node dsh-superpower-zh/scripts/verify-skills.mjs dsh-ppt-plugin
 
-# 2. bundle patch：!!js 求值 + 真实 Config schema + customSkillDirs 实际解析结果 + provider 名唯一 + apply() 真注册
+# 2. patch 里的 !!js 在真实 boot 上下文下算出的目录是否真的含技能包（三种上下文都断言）
+node dsh-superpower-zh/scripts/verify-expressions.mjs
+
+# 3. bundle patch：真实 Config schema + provider 名唯一 + apply() 真注册
 node dsh-superpower-zh/scripts/verify-patches.mjs
 
-# 3. 真启动一次完整组合（临时 profile，外部 cwd，空闲端口，跑完自动清理）
+# 4. 真启动一次完整组合（临时 profile，外部 cwd，空闲端口，跑完自动清理）
 powershell -NoProfile -File dsh-superpower-zh/scripts/boot-probe.ps1
 ```
 
-第 3 档的两个关键点：`skill-filesystem` 行若没激活，DSH 启动会 fail-loud；而**子进程强制从 `C:\` 启动**，所以任何"相对 cwd 才成立"的配置都会在这里暴露（见下）。脚本会新建临时 profile、走一遍普通 `dsh plugin add`、抓启动日志判定，然后删除该临时 profile 并结束自己启动的进程——不碰你自己的 profile。
+一条命令跑完前三档：`npm run verify`（在 `dsh-superpower-zh/` 目录下）。
 
-### 踩过的坑：`customSkillDirs` 必须是绝对路径
+第 4 档的两个关键点：`skill-filesystem` 行若没激活，DSH 启动会 fail-loud；而**子进程强制从 `C:\` 启动**，所以任何"相对 cwd 才成立"的配置都会在这里暴露。脚本会新建临时 profile、走一遍普通 `dsh plugin add`、抓启动日志判定，然后删除该临时 profile 并结束自己启动的进程——不碰你自己的 profile。
 
-`dsh-skill-filesystem` 内部是 `customSkillDirs.map((root) => resolve(root))` —— 相对项按 **DSH 进程的 cwd** 解析，既不是相对 patch 文件，也不是相对 profile。我们第一版写了 `./skills`：
+### 踩过的坑：`customSkillDirs` 要怎么算才拿到正确路径
 
-- 恰好从插件父目录启动时（我最初的探针就是 `cd` 过去跑的）能发现 24 个技能 → **探针假通过**；
-- 真实 GUI 进程从别处启动 → 该目录根本不存在 → **静默发现 0 个技能**，启动不报任何错，但规则段正常注册，于是表现为"系统提示里有规则、`skill` 工具却找不到任何技能"。
+这里连着踩了**两个**都会静默失效的坑，值得完整记下来。
 
-现在改用 `!!js` 从 patch 自身位置求值：
+**坑一：相对路径按进程 cwd 解析。** `dsh-skill-filesystem` 内部是 `customSkillDirs.map((root) => resolve(root))` —— 相对项按 **DSH 进程的 cwd** 解析，既不是相对 patch 文件，也不是相对 profile。第一版写了 `./skills`：
+
+- 恰好从插件父目录启动时（最初的探针就是 `cd` 过去跑的）能发现 24 个技能 → **探针假通过**；
+- 真实 GUI 进程从别处启动 → 该目录根本不存在 → **静默发现 0 个技能**，启动不报任何错。
+
+**坑二：`baseUrl` 不是本包目录。** 于是改成 `new URL('./skills/', baseUrl)`。但 profile bundle 的 patch 是由**挂载 profile 的那个 Include** 应用的，所以 `baseUrl` 是 **profile 目录**，不是包目录 —— 表达式算出 `<profile>/skills`，同样不存在，**同样静默 0 个技能**。
+
+两个坑的可见症状完全一样：系统提示里规则段正常注册，`skill` 工具却一个都找不到。
+
+**现在的写法：候选 + 自校验。** 表达式构造候选根目录，返回第一个**真的含技能包**（子目录里有 `SKILL.md`）的：
 
 ```yaml
 customSkillDirs:
   - !!js >-
-      process.getBuiltinModule('node:url').fileURLToPath(new URL('./skills/', baseUrl ?? process.cwd() + '/'))
+      (() => { /* baseUrl → DSH_HOME/profiles/web → resolve(REL)，逐个用 readdirSync 验证 */ })()
 ```
 
-`verify-patches.mjs` 也据此重写：它现在用**加载器自己的 `interpolate()`** 求值 `!!js`（因此能证明 `baseUrl` 真的可用），再按 provider 的方式 `resolve()` 并用 provider 的 name 语法扫描结果目录，相对路径会直接判失败。这就是"验证要按对方的方式做，不能按自己的方式做"。
+这样它不再依赖对加载器上下文的任何**单一假设**。
+
+**验证器也补了一档。** `verify-patches.mjs` 虽然用了加载器自己的 `interpolate()`，但它自己选了 `baseUrl`，所以只能证明"在我假设的上下文下成立"。新增 `verify-expressions.mjs`：用**真实 boot 的上下文**（`baseUrl` = profile 目录、`DSH_HOME` = 真实 home）求值，并在 `baseUrl` 为空、为不可达路径等三种情况下都断言结果目录真的含技能包。
+
+> 教训：**验证要按对方的方式做，不能按自己的方式做**——而且"我传进去的上下文"也是我自己的方式。
 
 ## 为什么 PPT 单独一个插件
 

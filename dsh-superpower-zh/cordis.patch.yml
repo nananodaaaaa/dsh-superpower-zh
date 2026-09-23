@@ -13,13 +13,25 @@
 #   2. `superpower-zh` — the package's own plugin entry, registering the
 #      always-on policy section into `systemPrompt`.
 #
-# THE `customSkillDirs` PATH MUST BE ABSOLUTE. `dsh-skill-filesystem` does
-# `customSkillDirs.map((root) => resolve(root))`, i.e. it resolves a relative
-# entry against the DSH process's CWD — never against this file, and never
-# against the profile. A relative `./skills` therefore works only when the
-# process happens to be launched from this package's parent directory, and
-# silently discovers ZERO skills otherwise (no boot error: the directory is
-# simply absent). That is why `new URL('./skills/', baseUrl)` is used instead.
+# THE `customSkillDirs` PATH IS COMPUTED, NOT ASSUMED. Two separate traps:
+#
+#   1. `dsh-skill-filesystem` does `customSkillDirs.map((root) => resolve(root))`,
+#      i.e. a relative entry resolves against the DSH process's CWD — never
+#      against this file and never against the profile. A relative `./skills`
+#      silently discovers ZERO skills unless the process happens to be started
+#      from one exact directory (no boot error: the directory is just absent).
+#   2. `baseUrl` is NOT this package's directory. A profile bundle's patch list
+#      is applied by the Include that mounts the composed profile, so `baseUrl`
+#      is the PROFILE directory. `new URL('./skills/', baseUrl)` therefore
+#      resolved to `<profile>/skills`, which does not exist — the same silent
+#      zero-skills failure with a different cause.
+#
+# So the expression builds candidate roots and returns the first one that
+# actually holds a skill bundle (a child directory carrying `SKILL.md`), which
+# is self-validating rather than dependent on any single assumption about the
+# loader's context. Measured behaviour: with the bundle installed at
+# `<profile>/node_modules/<package>/` — the only place a profile bundle ever
+# lives — the first candidate resolves exactly that path.
 #
 # `name: ./index.js` needs none of this: the profile loader anchors relative
 # inserted names to THIS file's directory before the loader ever sees them.
@@ -37,7 +49,7 @@
         includeDefaultRoots: false
         customSkillDirs:
           - !!js >-
-              process.getBuiltinModule('node:url').fileURLToPath(new URL('./skills/', baseUrl ?? process.cwd() + '/'))
+              (() => { const fs = process.getBuiltinModule('node:fs'); const path = process.getBuiltinModule('node:path'); const url = process.getBuiltinModule('node:url'); const REL = 'node_modules/dsh-superpower-zh/skills'; const holds = (root) => { try { return fs.readdirSync(root, { withFileTypes: true }).some((entry) => entry.isDirectory() && fs.existsSync(path.join(root, entry.name, 'SKILL.md'))); } catch { return false; } }; const roots = []; if (typeof baseUrl === 'string' && baseUrl) { try { roots.push(path.join(url.fileURLToPath(new URL('./', baseUrl)), REL)); } catch {} } const home = process.env.DSH_HOME; if (home) roots.push(path.join(home, 'profiles', 'web', REL)); roots.push(path.resolve(REL)); for (const root of roots) if (holds(root)) return root; return roots[0]; })()
         watch: true
 
     - id: superpower-zh

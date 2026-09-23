@@ -12,10 +12,16 @@
 # be registered once per process, so reusing `superpower-zh` (or the base
 # bundle's `filesystem`) here would collide.
 #
-# `customSkillDirs` is absolute for the same reason documented in the
-# superpower-zh patch: the skill provider resolves a relative entry against the
-# DSH process's CWD, which is neither this package nor the profile, so a
-# relative entry silently discovers zero skills.
+# `customSkillDirs` is COMPUTED, not assumed, for the same two reasons
+# documented in the superpower-zh patch:
+#   1. the skill provider resolves a relative entry against the DSH process's
+#      CWD, which is neither this file nor the profile;
+#   2. `baseUrl` is not this package's directory — a profile bundle's patch is
+#      applied by the Include mounting the composed profile, so `baseUrl` is
+#      the PROFILE directory.
+# Both mistakes fail silently as "zero skills discovered". The expression
+# therefore builds candidate roots and returns the first one that really holds
+# a skill bundle.
 
 - insert:
     - id: skill-filesystem-ppt-plugin
@@ -25,7 +31,7 @@
         includeDefaultRoots: false
         customSkillDirs:
           - !!js >-
-              process.getBuiltinModule('node:url').fileURLToPath(new URL('./skills/', baseUrl ?? process.cwd() + '/'))
+              (() => { const fs = process.getBuiltinModule('node:fs'); const path = process.getBuiltinModule('node:path'); const url = process.getBuiltinModule('node:url'); const REL = 'node_modules/dsh-ppt-plugin/skills'; const holds = (root) => { try { return fs.readdirSync(root, { withFileTypes: true }).some((entry) => entry.isDirectory() && fs.existsSync(path.join(root, entry.name, 'SKILL.md'))); } catch { return false; } }; const roots = []; if (typeof baseUrl === 'string' && baseUrl) { try { roots.push(path.join(url.fileURLToPath(new URL('./', baseUrl)), REL)); } catch {} } const home = process.env.DSH_HOME; if (home) roots.push(path.join(home, 'profiles', 'web', REL)); roots.push(path.resolve(REL)); for (const root of roots) if (holds(root)) return root; return roots[0]; })()
         watch: true
 
     - id: ppt-plugin
