@@ -70,20 +70,35 @@ dsh plugin --profile web remove dsh-ppt-plugin
 三档，由浅入深，全部可重跑：
 
 ```powershell
-cd dsh-superpower-zh
-
 # 1. 技能包能否被真实加载器识别（用 provider 自己的 name 语法：小写 kebab-case）
-node scripts/verify-skills.mjs .
-node scripts/verify-skills.mjs ../dsh-ppt-plugin
+node dsh-superpower-zh/scripts/verify-skills.mjs dsh-superpower-zh
+node dsh-superpower-zh/scripts/verify-skills.mjs dsh-ppt-plugin
 
-# 2. bundle patch 是否合法 + provider 名是否唯一 + 各插件 apply() 是否真能注册提示段
-node scripts/verify-patches.mjs "$env:USERPROFILE\.dsh\profiles\web" . ../dsh-ppt-plugin
+# 2. bundle patch：!!js 求值 + 真实 Config schema + customSkillDirs 实际解析结果 + provider 名唯一 + apply() 真注册
+node dsh-superpower-zh/scripts/verify-patches.mjs
 
-# 3. 真启动一次完整组合（临时 profile，空闲端口，跑完自动清理）
-powershell -NoProfile -File scripts/boot-probe.ps1
+# 3. 真启动一次完整组合（临时 profile，外部 cwd，空闲端口，跑完自动清理）
+powershell -NoProfile -File dsh-superpower-zh/scripts/boot-probe.ps1
 ```
 
-第 3 档的关键点：`skill-filesystem` 行若没激活，DSH 启动会 fail-loud，所以"启动干净 + 两个提示段都注册"就等于证明这些行真的挂上了。脚本会新建临时 profile、走一遍普通 `dsh plugin add`、抓启动日志判定，然后删除该临时 profile 并结束自己启动的进程——不碰你自己的 profile。
+第 3 档的两个关键点：`skill-filesystem` 行若没激活，DSH 启动会 fail-loud；而**子进程强制从 `C:\` 启动**，所以任何"相对 cwd 才成立"的配置都会在这里暴露（见下）。脚本会新建临时 profile、走一遍普通 `dsh plugin add`、抓启动日志判定，然后删除该临时 profile 并结束自己启动的进程——不碰你自己的 profile。
+
+### 踩过的坑：`customSkillDirs` 必须是绝对路径
+
+`dsh-skill-filesystem` 内部是 `customSkillDirs.map((root) => resolve(root))` —— 相对项按 **DSH 进程的 cwd** 解析，既不是相对 patch 文件，也不是相对 profile。我们第一版写了 `./skills`：
+
+- 恰好从插件父目录启动时（我最初的探针就是 `cd` 过去跑的）能发现 24 个技能 → **探针假通过**；
+- 真实 GUI 进程从别处启动 → 该目录根本不存在 → **静默发现 0 个技能**，启动不报任何错，但规则段正常注册，于是表现为"系统提示里有规则、`skill` 工具却找不到任何技能"。
+
+现在改用 `!!js` 从 patch 自身位置求值：
+
+```yaml
+customSkillDirs:
+  - !!js >-
+      process.getBuiltinModule('node:url').fileURLToPath(new URL('./skills/', baseUrl ?? process.cwd() + '/'))
+```
+
+`verify-patches.mjs` 也据此重写：它现在用**加载器自己的 `interpolate()`** 求值 `!!js`（因此能证明 `baseUrl` 真的可用），再按 provider 的方式 `resolve()` 并用 provider 的 name 语法扫描结果目录，相对路径会直接判失败。这就是"验证要按对方的方式做，不能按自己的方式做"。
 
 ## 为什么 PPT 单独一个插件
 

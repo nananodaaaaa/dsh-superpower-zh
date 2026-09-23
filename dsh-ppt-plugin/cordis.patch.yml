@@ -12,8 +12,10 @@
 # be registered once per process, so reusing `superpower-zh` (or the base
 # bundle's `filesystem`) here would collide.
 #
-# `name: ./skills` is a normal relative plugin name, anchored by the profile
-# loader to THIS file's directory.
+# `customSkillDirs` is absolute for the same reason documented in the
+# superpower-zh patch: the skill provider resolves a relative entry against the
+# DSH process's CWD, which is neither this package nor the profile, so a
+# relative entry silently discovers zero skills.
 
 - insert:
     - id: skill-filesystem-ppt-plugin
@@ -22,7 +24,8 @@
         providerName: ppt-plugin
         includeDefaultRoots: false
         customSkillDirs:
-          - ./skills
+          - !!js >-
+              process.getBuiltinModule('node:url').fileURLToPath(new URL('./skills/', baseUrl ?? process.cwd() + '/'))
         watch: true
 
     - id: ppt-plugin

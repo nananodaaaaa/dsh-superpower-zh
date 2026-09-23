@@ -8,6 +8,12 @@
 # AgentTeams-style rows alongside. The probe profile is deleted afterwards; the
 # user's own profiles are never modified.
 #
+# THE PROBE DELIBERATELY LAUNCHES FROM $env:SystemDrive\. A relative
+# `customSkillDirs` entry resolves against the server process's CWD at mount
+# time, so a probe run from the package directory passes while the real GUI
+# process silently discovers zero skills. Launching the child from a foreign
+# CWD is what lets this probe catch that whole class of bug.
+#
 # Usage: pwsh -File scripts/boot-probe.ps1
 
 # `dsh` writes progress lines to stderr, which Windows PowerShell surfaces as a
@@ -19,6 +25,7 @@ $profilesRoot = Join-Path $env:USERPROFILE '.dsh\profiles'
 $probe = Join-Path $profilesRoot 'spverify'
 $log = Join-Path $env:TEMP 'dsh-spverify.log'
 $err = "$log.err"
+$foreignCwd = "$env:SystemDrive\"
 $started = $null
 
 function Remove-ProbeProfile {
@@ -51,9 +58,10 @@ try {
   # Start-Process cannot launch.
   $dshBin = Join-Path (Split-Path (Get-Command dsh).Source) 'node_modules\@deepseek-ai\dsh\lib\bin.js'
   if (-not (Test-Path $dshBin)) { throw "cannot locate the dsh entry point (looked for $dshBin)" }
-  Write-Output "starting: node $dshBin --profile spverify --port 0 --no-open"
+  Write-Output "starting: node $dshBin --profile spverify --port 0 --no-open  (cwd = $foreignCwd)"
   $started = Start-Process -FilePath 'node' `
     -ArgumentList @($dshBin, '--profile', 'spverify', '--port', '0', '--no-open') `
+    -WorkingDirectory $foreignCwd `
     -RedirectStandardOutput $log -RedirectStandardError $err -PassThru -WindowStyle Hidden
 
   $url = $null

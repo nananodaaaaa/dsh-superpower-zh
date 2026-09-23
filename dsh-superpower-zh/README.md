@@ -63,24 +63,27 @@ dsh plugin --profile web remove dsh-superpower-zh
 
 ```powershell
 # 1. 技能包能否被真实加载器识别（用 provider 自己的 name 语法）
-node scripts/verify-skills.mjs
+node scripts/verify-skills.mjs .
 
-# 2. bundle patch 是否合法、provider 名是否唯一、apply() 是否真能注册提示段
-node scripts/verify-patches.mjs "$env:USERPROFILE\.dsh\profiles\web" . ..\dsh-ppt-plugin
+# 2. bundle patch：!!js 求值 + 真实 Config schema + customSkillDirs 实际解析结果 + apply() 真注册
+node scripts/verify-patches.mjs
 
-# 3. 真启动一次完整组合（临时 profile，跑完自动删除）
+# 3. 真启动一次完整组合（临时 profile，强制从 C:\ 启动，跑完自动删除）
 powershell -NoProfile -File scripts/boot-probe.ps1
 ```
 
 三者当前均通过。第 3 档的实测输出：
 
 ```
+starting: node ... --profile spverify --port 0 --no-open  (cwd = C:\)
 [dsh-superpower-zh] registered prompt section superpower-zh:policy (order 700)
 [dsh-ppt-plugin]     registered prompt section ppt-plugin:policy (order 710)
 activation problems: (none)
 ```
 
-`boot-probe.ps1` 会新建临时 profile、走一遍普通 `dsh plugin add`、在空闲端口起服务、抓启动日志判定，然后**删除该临时 profile 并结束自己启动的进程**——不碰你自己的 `web` profile。
+`boot-probe.ps1` 会新建临时 profile、走一遍普通 `dsh plugin add`、**从 `C:\` 启动子进程**、抓启动日志判定，然后删除该临时 profile 并结束自己启动的进程——不碰你自己的 `web` profile。
+
+> ⚠️ **别把探针的 cwd 改回插件目录。** `customSkillDirs` 的相对路径是按 DSH 进程的 cwd 解析的，早期版本因为在插件目录里跑探针而"假通过"，掩盖了真实进程静默发现 0 个技能的故障。详见仓库根 README 的「踩过的坑」。
 
 ## 为什么拆成两个插件
 
@@ -95,7 +98,8 @@ activation problems: (none)
 
 ## 已知限制
 
-- **改动需要重启 Harness**：profile 层在进程启动时组合，装完/改完要重启 `dsh` 进程才会生效。
+- **改动需要重启 DSH 进程**：profile 层在进程启动时组合，装完/改完要重启 `dsh` 进程才会生效（本插件用 `link:` 装在你的 profile 里，所以改本地文件后重启即生效）。
+- **`customSkillDirs` 必须是绝对路径**：相对路径按 DSH 进程的 cwd 解析，会因启动目录不同而静默发现 0 个技能。本包已用 `!!js` 从 patch 自身位置求值，见仓库根 README。
 - **技能正文保持原样**：没有改动任何技能的方法论内容，只改了被升级的那 3 个技能名及其引用。正文里残留的 Claude Code / Codex 工具名通过规则段和 `references/dsh-tools.md` 做映射说明。
 - **PPT 三技能依赖图像生成能力**：本 Harness 若没挂载图像生成工具，规则段要求模型**停机说明阻塞**，而不是用代码绘图伪造图片。
 - **`using-superpowers` 的「必须调用 Skill 工具」**：本插件把它降级为规则段里的「先查技能（哪怕只有 1% 可能）」，避免它在每次对话开头强制一次技能调用。

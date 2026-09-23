@@ -58,8 +58,39 @@ if (yaml === undefined) {
   process.exit(2)
 }
 
+/**
+ * The entry-list YAML dialect: `!!js` scalars become expression nodes the
+ * loader evaluates at entry activation. Rebuilt here exactly as
+ * `dsh-app-boot` defines it, because plain `yaml.load` rejects the tag.
+ */
+const JsExpr = new yaml.Type('tag:yaml.org,2002:js', {
+  kind: 'scalar',
+  resolve: (data) => typeof data === 'string',
+  construct: (data) => ({ __jsExpr: data }),
+})
+const entryListSchema = yaml.JSON_SCHEMA.extend(JsExpr)
+
 const require = loader(profileDir, packageDirs)
 const skillFilesystem = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-skill-filesystem')).href)
+
+/**
+ * The loader's own `!!js` evaluator, imported rather than reimplemented. The
+ * profile loader builds patches through this exact function with the Include's
+ * context in scope, so evaluating here proves the expression resolves the way
+ * a real boot will — including whether `baseUrl` is actually available.
+ */
+const { interpolate } = await import(pathToFileURL(require.resolve('@deepseek-ai/cordis-plugin-loader')).href)
+
+/**
+ * Evaluate one row's config the way the loader does. `baseUrl` is supplied
+ * from this package's directory, which is what a profile bundle gets: the
+ * overlay is loaded from the package, so its expressions see the package
+ * directory. A `./skills` here therefore proves the patch does NOT depend on
+ * the process CWD.
+ */
+function evaluateConfig(config, packageDir) {
+  return interpolate({ baseUrl: pathToFileURL(join(packageDir, '/')).href }, config)
+}
 
 /** Apply the package's own schema; Schemastery throws with the offending path. */
 function checkConfig(config, label) {
@@ -70,6 +101,35 @@ function checkConfig(config, label) {
   } catch (error) {
     return `${label}: config rejected by the real schema — ${error.message}`
   }
+}
+
+/**
+ * Scan one skill root the way the provider's `discoverRoot` does: a skill is
+ * a directory holding `SKILL.md`. A skill whose frontmatter `name` does not
+ * match the provider grammar is reported too, because the provider drops it
+ * with only a host-side warning.
+ * @param root - the already-resolved root directory.
+ * @returns the discovered skill names, as the provider would see them.
+ */
+async function scanSkillDir(root) {
+  const found = []
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const file = join(root, entry.name, 'SKILL.md')
+    let text
+    try {
+      text = await readFile(file, 'utf8')
+    } catch {
+      continue
+    }
+    const match = /^name:[ \t]*(.+)$/m.exec(text)
+    const declared = match === null ? entry.name : match[1].trim()
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(declared)) {
+      throw new Error(`skill "${entry.name}" declares name "${declared}", which the provider grammar rejects (it would be silently skipped)`)
+    }
+    found.push(declared)
+  }
+  return found.sort()
 }
 
 const failures = []
@@ -88,7 +148,7 @@ for (const rawDir of packageDirs) {
   const patchPath = join(packageDir, 'cordis.patch.yml')
   let patches
   try {
-    patches = yaml.load(await readFile(patchPath, 'utf8'))
+    patches = yaml.load(await readFile(patchPath, 'utf8'), { schema: entryListSchema })
   } catch (error) {
     failures.push(`${packageDir}: cannot read/parse ${patchPath}: ${String(error)}`)
     continue
@@ -120,18 +180,47 @@ for (const rawDir of packageDirs) {
         } else {
           providerNames.set(providerName, label)
         }
-        const problem = checkConfig(row.config, `${label}: row ${row.id}`)
+        // Evaluate `!!js` first: everything downstream must judge the values a
+        // real boot would see, not the raw expression nodes.
+        let config
+        try {
+          config = evaluateConfig(row.config, packageDir)
+        } catch (error) {
+          failures.push(`${label}: row ${row.id} !!js config threw during evaluation — ${String(error)}`)
+          continue
+        }
+        const problem = checkConfig(config, `${label}: row ${row.id}`)
         if (problem !== undefined) failures.push(problem)
         else console.log(`  row ${row.id}: providerName="${providerName}" passes the real Config schema`)
 
-        // A relative customSkillDirs entry resolves against process.cwd() at
-        // mount; confirm the same relative path exists beside the patch.
-        for (const dir of row.config?.customSkillDirs ?? []) {
-          if (isAbsolute(dir)) {
-            if (!existsSync(dir)) failures.push(`${label}: customSkillDirs "${dir}" does not exist`)
-          } else if (!existsSync(join(packageDir, dir))) {
-            failures.push(`${label}: customSkillDirs "${dir}" does not resolve beside ${patchPath}`)
+        // `dsh-skill-filesystem` resolves every customSkillDirs entry with
+        // `resolve(root)` — against the DSH process's CWD, NOT against the
+        // patch file and NOT against the profile. It does that at mount time,
+        // so a relative entry is only correct when the process is launched
+        // from one exact directory and silently discovers ZERO skills
+        // everywhere else. Reproduce the provider's own resolution here (and
+        // scan the result) so that mistake can never pass this check again.
+        for (const dir of config?.customSkillDirs ?? []) {
+          const resolved = resolve(dir)
+          let names
+          try {
+            names = await scanSkillDir(resolved)
+          } catch (error) {
+            failures.push(`${label}: customSkillDirs "${dir}" resolved to ${resolved}, which the provider cannot scan (${String(error)})`)
+            continue
           }
+          if (names.length === 0) {
+            failures.push(`${label}: customSkillDirs "${dir}" resolved to ${resolved}, which holds no skill bundles (<name>/SKILL.md)`)
+            continue
+          }
+          if (!isAbsolute(dir)) {
+            const beside = await scanSkillDir(join(packageDir, dir)).catch(() => [])
+            failures.push(
+              `${label}: customSkillDirs "${dir}" is RELATIVE. It resolves to ${resolved} against this process's CWD, so it only works when DSH is launched from one exact directory. Use an absolute path (e.g. !!js new URL('./skills/', baseUrl)) instead.${beside.length > 0 ? ` Beside the patch it would have found ${beside.length} skills.` : ''}`,
+            )
+            continue
+          }
+          console.log(`  row ${row.id}: customSkillDirs -> ${resolved} (${names.length} skill bundles: ${names.join(', ')})`)
         }
       }
 

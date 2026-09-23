@@ -13,10 +13,16 @@
 #   2. `superpower-zh` — the package's own plugin entry, registering the
 #      always-on policy section into `systemPrompt`.
 #
-# `name: ./skills` is a normal relative plugin name. The profile loader
-# anchors relative inserted names to THIS file's directory, so the row
-# resolves beside the patch wherever the package is installed or linked — no
-# absolute path to keep in sync and no `!!js` needed.
+# THE `customSkillDirs` PATH MUST BE ABSOLUTE. `dsh-skill-filesystem` does
+# `customSkillDirs.map((root) => resolve(root))`, i.e. it resolves a relative
+# entry against the DSH process's CWD — never against this file, and never
+# against the profile. A relative `./skills` therefore works only when the
+# process happens to be launched from this package's parent directory, and
+# silently discovers ZERO skills otherwise (no boot error: the directory is
+# simply absent). That is why `new URL('./skills/', baseUrl)` is used instead.
+#
+# `name: ./index.js` needs none of this: the profile loader anchors relative
+# inserted names to THIS file's directory before the loader ever sees them.
 #
 # Both rows publish nothing, so neither needs an `isolate` realm; a profile
 # bundle is one instance per process, which is exactly the lifetime the shared
@@ -30,7 +36,8 @@
         providerName: superpower-zh
         includeDefaultRoots: false
         customSkillDirs:
-          - ./skills
+          - !!js >-
+              process.getBuiltinModule('node:url').fileURLToPath(new URL('./skills/', baseUrl ?? process.cwd() + '/'))
         watch: true
 
     - id: superpower-zh
