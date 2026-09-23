@@ -1,7 +1,7 @@
 {
   "name": "dsh-superpower-zh",
   "version": "0.1.0",
-  "description": "Superpower-ZH for DeepSeek Harness: 24 个中文技能（brainstorming / TDD / systematic-debugging / 中文工程规范 / PPT 生成）+ 常驻核心规则，作为 profile 插件与 AgentTeams 并行共存",
+  "description": "Superpower-ZH for DeepSeek Harness: 21 ???????(brainstorming / TDD / systematic-debugging / ?????? / ??? MCP ??)+ ???????,?? profile ??? AgentTeams ????;PPT ??????? dsh-ppt-plugin ?",
   "type": "module",
   "main": "index.js",
   "exports": {
